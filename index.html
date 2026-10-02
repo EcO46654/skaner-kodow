@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Skaner i Weryfikator Kodów</title>
+    <!-- Pobranie biblioteki OCR Tesseract.js -->
+    <script src="https://jsdelivr.net"></script>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background: #222; color: white; margin: 0; padding: 10px; }
+        #video { width: 100%; max-width: 500px; border-radius: 8px; transform: scaleX(1); }
+        #wynik { font-size: 24px; font-weight: bold; margin: 20px 0; padding: 15px; border-radius: 8px; }
+        .neutralny { background: #333; }
+        .sukces { background: #28a745; color: white; animation: pulse 0.5s; }
+        .blad { background: #dc3545; color: white; }
+        #skanowany-tekst { font-size: 14px; color: #aaa; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>📸 Skaner Kamery (Weryfikator)</h2>
+    <video id="video" autoplay playsinline></video>
+    
+    <div id="wynik" class="neutralny">Skieruj kamerę na kody...</div>
+    <div id="skanowany-tekst">Wykryty tekst: Szukanie...</div>
+
+    <script>
+        const video = document.getElementById('video');
+        const wynikDiv = document.getElementById('wynik');
+        const skanowanyTekstDiv = document.getElementById('skanowany-tekst');
+
+        // 1. Uruchomienie kamery tylnej w telefonie
+        navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: "environment" } 
+        })
+        .then(stream => { video.srcObject = stream; })
+        .catch(err => { alert("Brak dostępu do kamery: " + err); });
+
+        // 2. Funkcja przetwarzająca klatki wideo co 1 sekundę
+        video.addEventListener('play', () => {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+
+            setInterval(async () => {
+                if (video.paused || video.ended) return;
+
+                // Dopasowanie rozmiaru płótna do wideo
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Konwersja klatki na format zrozumiały dla OCR
+                const obrazBaza64 = canvas.toDataURL('image/jpeg');
+
+                try {
+                    // Rozpoznawanie tekstu za pomocą Tesseract.js
+                    const { data: { text } } = await Tesseract.recognize(obrazBaza64, 'eng');
+                    
+                    // Podział tekstu na linie i oczyszczenie ze zbędnych znaków
+                    const linie = text.split('\n')
+                                      .map(l => l.replace(/[^a-zA-Z0-9]/g, '').trim().toLowerCase())
+                                      .filter(l => l.length > 2); // odrzucamy pojedyncze śmieci tekstowe
+
+                    skanowanyTekstDiv.textContent = `Wykryte linie: ${linie.join(' | ')}`;
+
+                    if (linie.length >= 2) {
+                        // Zakładamy, że dwie pierwsze wykryte linie to obrazek i pole tekstowe (jeden pod drugim)
+                        const kodZObrazka = linie[0];
+                        const kodWpisany = linie[1];
+
+                        if (kodZObrazka === kodWpisany) {
+                            wynikDiv.textContent = `✅ POPRAWNY (${kodZObrazka})`;
+                            wynikDiv.className = "sukces";
+                        } else {
+                            wynikDiv.textContent = `❌ BŁĄD (Góra: ${kodZObrazka} / Dół: ${kodWpisany})`;
+                            wynikDiv.className = "blad";
+                        }
+                    } else {
+                        wynikDiv.textContent = "Szukanie linii tekstu (widzę tylko jedną lub zero)...";
+                        wynikDiv.className = "neutralny";
+                    }
+
+                } catch (ocrError) {
+                    console.error("Problem z OCR:", ocrError);
+                }
+            }, 1000); // Skanuj co 1000 ms (1 sekunda)
+        });
+    </script>
+</body>
+</html>
